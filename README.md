@@ -34,6 +34,7 @@ Add the plugin to your OpenClaw configuration:
 | `model` | string | (auto) | Override model for the judge LLM |
 | `authProfileId` | string | (auto) | Auth profile for the judge LLM |
 | `timeoutMs` | number | `15000` | Timeout for judge evaluation in milliseconds |
+| `maxContextWords` | number | `2000` | Maximum words of session context to include |
 
 ### Example Configuration
 
@@ -84,10 +85,20 @@ You can provide a custom prompt for the judge LLM using the `securityPrompt` con
 
 1. The plugin hooks into `before_tool_call` events
 2. Logs the full tool call JSON (if logging enabled)
-3. Sends the tool call to the judge LLM for security evaluation
-4. The judge returns a verdict with risk level and reasoning
-5. If judged as high/critical risk and blocking is enabled, the tool call is blocked
-6. All verdicts are logged for audit purposes
+3. Loads the session context from session files (limited by `maxContextWords`)
+4. Sends both the tool call and session context to the judge LLM for security evaluation
+5. The judge returns a verdict with risk level and reasoning
+6. If judged as high/critical risk and blocking is enabled, the tool call is blocked
+7. All verdicts are logged for audit purposes
+
+## Session Context
+
+The plugin loads conversation history from the session files to provide context for the judge LLM. This allows the judge to make more informed decisions by understanding the conversation flow that led to the tool call.
+
+- Session files are located at `~/.openclaw/agents/{agentId}/sessions/*.jsonl`
+- The context is limited by word count (default: 2000 words) to manage token usage
+- Most recent messages are prioritized when truncating
+- Only user and assistant messages are included (system messages are filtered out)
 
 ## License
 

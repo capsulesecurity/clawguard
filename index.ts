@@ -13,13 +13,16 @@ type CapsuleClawGuardConfig = {
   model?: string;
   authProfileId?: string;
   timeoutMs?: number;
+  maxContextWords?: number;
 };
 
 type RunEmbeddedPiAgentFn = (params: Record<string, unknown>) => Promise<unknown>;
 
+const DEFAULT_MAX_CONTEXT_WORDS = 2000;
+
 const DEFAULT_SECURITY_PROMPT = `You are a security analyst reviewing tool calls for potential security risks.
 
-Analyze the following tool call and determine if it poses a security risk.
+Analyze the following tool call and the session context to determine if it poses a security risk.
 
 SECURITY RISKS TO CHECK FOR:
 - Command injection (shell commands with untrusted input)
@@ -33,10 +36,14 @@ SECURITY RISKS TO CHECK FOR:
 - Code execution with untrusted input
 - Rogue agent behavior (attempts to bypass safety controls, deceptive actions, unauthorized autonomous operations)
 
+SESSION CONTEXT (recent conversation history):
+{SESSION_CONTEXT}
+
 TOOL CALL TO ANALYZE:
 {TOOL_CALL_JSON}
 
 INSTRUCTIONS:
+- Consider the session context when evaluating the tool call
 - Return ONLY a valid JSON object
 - Do not wrap in markdown fences
 - Do not include any commentary
@@ -86,6 +93,166 @@ function collectText(payloads: Array<{ text?: string; isError?: boolean }> | und
   return texts.join("\n").trim();
 }
 
+// Session file parsing utilities
+function normalizeSessionText(value: string): string {
+  return value
+    .replace(/\s*\n+\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractTextFromContent(content: unknown): string | null {
+  if (typeof content === "string") {
+    const normalized = normalizeSessionText(content);
+    return normalized || null;
+  }
+  if (!Array.isArray(content)) {
+    return null;
+  }
+  const parts: string[] = [];
+  for (const block of content) {
+    if (!block || typeof block !== "object") {
+      continue;
+    }
+    const record = block as { type?: unknown; text?: unknown };
+    if (record.type !== "text" || typeof record.text !== "string") {
+      continue;
+    }
+    const normalized = normalizeSessionText(record.text);
+    if (normalized) {
+      parts.push(normalized);
+    }
+  }
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+function resolveStateDir(): string {
+  const home = os.homedir();
+  return process.env.OPENCLAW_STATE_DIR || path.join(home, ".openclaw");
+}
+
+function resolveSessionsDir(agentId: string): string {
+  const stateDir = resolveStateDir();
+  const normalizedAgentId = agentId.trim().toLowerCase() || "main";
+  return path.join(stateDir, "agents", normalizedAgentId, "sessions");
+}
+
+async function loadSessionContext(
+  sessionKey: string | undefined,
+  agentId: string | undefined,
+  maxWords: number,
+): Promise<string> {
+  if (!sessionKey) {
+    return "(no session context available)";
+  }
+
+  // Parse agentId from sessionKey if not provided
+  // Format: "agent:{agentId}:{rest}" or just use provided agentId
+  let resolvedAgentId = agentId || "main";
+  let sessionId: string | undefined;
+
+  const parts = sessionKey.split(":").filter(Boolean);
+  if (parts[0] === "agent" && parts.length >= 2) {
+    resolvedAgentId = parts[1] || "main";
+    // The session ID might be part of the key or we need to find the file
+    if (parts.length >= 3) {
+      sessionId = parts.slice(2).join("-");
+    }
+  }
+
+  const sessionsDir = resolveSessionsDir(resolvedAgentId);
+
+  try {
+    // Try to find session files
+    const files = await fs.readdir(sessionsDir);
+    const jsonlFiles = files.filter((f) => f.endsWith(".jsonl")).sort().reverse();
+
+    if (jsonlFiles.length === 0) {
+      return "(no session files found)";
+    }
+
+    // Try to find a matching session file, or use the most recent one
+    let targetFile: string | undefined;
+    if (sessionId) {
+      // Look for a file that matches the session ID
+      targetFile = jsonlFiles.find(
+        (f) => f.includes(sessionId) || f.startsWith(sessionId.split("-")[0] || ""),
+      );
+    }
+    // Fall back to the most recent file
+    if (!targetFile) {
+      targetFile = jsonlFiles[0];
+    }
+
+    const sessionFilePath = path.join(sessionsDir, targetFile);
+    const content = await fs.readFile(sessionFilePath, "utf-8");
+
+    // Parse JSONL and extract messages
+    const lines = content.split("\n");
+    const messages: string[] = [];
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+
+      let record: unknown;
+      try {
+        record = JSON.parse(line);
+      } catch {
+        continue;
+      }
+
+      if (!record || typeof record !== "object") continue;
+      const recordObj = record as { type?: unknown; message?: unknown };
+
+      if (recordObj.type !== "message") continue;
+
+      const message = recordObj.message as { role?: unknown; content?: unknown } | undefined;
+      if (!message || typeof message.role !== "string") continue;
+
+      if (message.role !== "user" && message.role !== "assistant") continue;
+
+      const text = extractTextFromContent(message.content);
+      if (!text) continue;
+
+      const label = message.role === "user" ? "User" : "Assistant";
+      messages.push(`${label}: ${text}`);
+    }
+
+    if (messages.length === 0) {
+      return "(no messages in session)";
+    }
+
+    // Limit by word count - take from the end (most recent) and work backwards
+    const allText = messages.join("\n");
+    const words = allText.split(/\s+/);
+
+    if (words.length <= maxWords) {
+      return allText;
+    }
+
+    // Take the last N words worth of content
+    // Work backwards through messages to find how many we can fit
+    let wordCount = 0;
+    let startIndex = messages.length;
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const messageWords = messages[i]!.split(/\s+/).length;
+      if (wordCount + messageWords > maxWords) {
+        break;
+      }
+      wordCount += messageWords;
+      startIndex = i;
+    }
+
+    const truncatedMessages = messages.slice(startIndex);
+    const truncatedText = truncatedMessages.join("\n");
+
+    return `(truncated to last ~${maxWords} words)\n${truncatedText}`;
+  } catch (err) {
+    return `(failed to load session: ${String(err)})`;
+  }
+}
+
 type SecurityCheckResult = {
   isRisk: boolean;
   riskLevel: "none" | "low" | "medium" | "high" | "critical";
@@ -97,6 +264,7 @@ async function runSecurityCheck(
   api: OpenClawPluginApi,
   config: CapsuleClawGuardConfig,
   toolCallJson: string,
+  sessionContext: string,
 ): Promise<SecurityCheckResult | null> {
   const primary = api.config?.agents?.defaults?.model?.primary;
   const primaryProvider = typeof primary === "string" ? primary.split("/")[0] : undefined;
@@ -123,7 +291,9 @@ async function runSecurityCheck(
     typeof config.timeoutMs === "number" && config.timeoutMs > 0 ? config.timeoutMs : 15_000;
 
   const promptTemplate = config.securityPrompt?.trim() || DEFAULT_SECURITY_PROMPT;
-  const fullPrompt = promptTemplate.replace("{TOOL_CALL_JSON}", toolCallJson);
+  const fullPrompt = promptTemplate
+    .replace("{TOOL_CALL_JSON}", toolCallJson)
+    .replace("{SESSION_CONTEXT}", sessionContext);
 
   let tmpDir: string | null = null;
   try {
@@ -194,7 +364,7 @@ const capsuleClawGuardPlugin = {
   id: "capsule-claw-guard",
   name: "Capsule Claw Guard",
   description:
-    "Security guard plugin - logs tool calls and uses LLM to detect security risks before execution",
+    "Security guard plugin - logs tool calls and uses LLM as a Judge to detect security risks before execution",
 
   configSchema: {
     jsonSchema: {
@@ -221,6 +391,10 @@ const capsuleClawGuardPlugin = {
           type: "boolean",
           description: "Block tool calls when security risk is detected (default: true)",
         },
+        maxContextWords: {
+          type: "number",
+          description: "Maximum words of session context to include (default: 2000)",
+        },
         provider: { type: "string" },
         model: { type: "string" },
         authProfileId: { type: "string" },
@@ -245,6 +419,11 @@ const capsuleClawGuardPlugin = {
     const securityCheckEnabled = config.securityCheckEnabled !== false;
     // Default: block on risk
     const blockOnRisk = config.blockOnRisk !== false;
+    // Default: 2000 words max context
+    const maxContextWords =
+      typeof config.maxContextWords === "number" && config.maxContextWords > 0
+        ? config.maxContextWords
+        : DEFAULT_MAX_CONTEXT_WORDS;
 
     api.on("before_tool_call", async (event, ctx) => {
       const { toolName, params } = event;
@@ -268,7 +447,10 @@ const capsuleClawGuardPlugin = {
 
       // Run security check if enabled
       if (securityCheckEnabled) {
-        const securityResult = await runSecurityCheck(api, config, toolCallJson);
+        // Load session context for the judge
+        const sessionContext = await loadSessionContext(ctx.sessionKey, ctx.agentId, maxContextWords);
+
+        const securityResult = await runSecurityCheck(api, config, toolCallJson, sessionContext);
 
         if (securityResult) {
           if (securityResult.isRisk) {
@@ -297,7 +479,7 @@ const capsuleClawGuardPlugin = {
     });
 
     api.logger.info(
-      `[capsule-claw-guard] Initialized (logging: ${logToolCalls}, security: ${securityCheckEnabled}, block: ${blockOnRisk})`,
+      `[capsule-claw-guard] Initialized (logging: ${logToolCalls}, security: ${securityCheckEnabled}, block: ${blockOnRisk}, maxContextWords: ${maxContextWords})`,
     );
   },
 };

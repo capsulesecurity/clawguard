@@ -41,6 +41,10 @@
       "timeoutMs": {
         "type": "number",
         "description": "Timeout for security check LLM call in milliseconds (default: 15000)"
+      },
+      "maxContextWords": {
+        "type": "number",
+        "description": "Maximum words of session context to include for the judge (default: 2000)"
       }
     }
   },
@@ -85,6 +89,11 @@
     "timeoutMs": {
       "label": "Timeout (ms)",
       "help": "Timeout for security check LLM call in milliseconds",
+      "advanced": true
+    },
+    "maxContextWords": {
+      "label": "Max Context Words",
+      "help": "Maximum words of session context to include for the judge LLM (limits token usage)",
       "advanced": true
     }
   }

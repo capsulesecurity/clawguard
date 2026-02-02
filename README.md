@@ -62,6 +62,7 @@ The judge LLM evaluates tool calls for:
 - Malicious file operations (writing to system directories)
 - SQL injection patterns
 - Code execution with untrusted input
+- Rogue agent behavior (attempts to bypass safety controls, deceptive actions, unauthorized autonomous operations)
 
 ## Custom Judge Prompt
 

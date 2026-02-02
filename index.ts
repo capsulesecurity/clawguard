@@ -31,6 +31,7 @@ SECURITY RISKS TO CHECK FOR:
 - Malicious file operations (writing to system directories)
 - SQL injection patterns
 - Code execution with untrusted input
+- Rogue agent behavior (attempts to bypass safety controls, deceptive actions, unauthorized autonomous operations)
 
 TOOL CALL TO ANALYZE:
 {TOOL_CALL_JSON}

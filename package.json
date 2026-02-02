@@ -1,8 +1,26 @@
 {
-  "name": "@openclaw/capsule-claw-guard",
-  "version": "2026.2.2",
-  "description": "Security guard plugin - logs tool calls and uses LLM to detect security risks before execution",
+  "name": "@capsulesecurity/clawguard",
+  "version": "0.1.1",
+  "description": "Security guard plugin for OpenClaw - uses LLM as a Judge to detect and block risky tool calls",
   "type": "module",
+  "main": "index.ts",
+  "keywords": [
+    "openclaw",
+    "security",
+    "llm",
+    "agent",
+    "guardrails"
+  ],
+  "author": "Capsule Security",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/capsulesecurity/clawguard.git"
+  },
+  "homepage": "https://github.com/capsulesecurity/clawguard#readme",
+  "bugs": {
+    "url": "https://github.com/capsulesecurity/clawguard/issues"
+  },
   "devDependencies": {
     "openclaw": "workspace:*"
   },

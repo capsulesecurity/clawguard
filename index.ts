@@ -282,7 +282,7 @@ async function runSecurityCheck(
 
   if (!provider || !model) {
     api.logger.warn(
-      "[capsule-claw-guard] Cannot run security check: no provider/model configured",
+      "[clawguard] Cannot run security check: no provider/model configured",
     );
     return null;
   }
@@ -321,7 +321,7 @@ async function runSecurityCheck(
     // oxlint-disable-next-line typescript/no-explicit-any
     const text = collectText((result as any).payloads);
     if (!text) {
-      api.logger.warn("[capsule-claw-guard] Security check LLM returned empty output");
+      api.logger.warn("[clawguard] Security check LLM returned empty output");
       return null;
     }
 
@@ -330,7 +330,7 @@ async function runSecurityCheck(
     try {
       parsed = JSON.parse(raw);
     } catch {
-      api.logger.warn("[capsule-claw-guard] Security check LLM returned invalid JSON");
+      api.logger.warn("[clawguard] Security check LLM returned invalid JSON");
       return null;
     }
 
@@ -344,10 +344,10 @@ async function runSecurityCheck(
       return parsed as SecurityCheckResult;
     }
 
-    api.logger.warn("[capsule-claw-guard] Security check response missing required fields");
+    api.logger.warn("[clawguard] Security check response missing required fields");
     return null;
   } catch (err) {
-    api.logger.warn(`[capsule-claw-guard] Security check failed: ${String(err)}`);
+    api.logger.warn(`[clawguard] Security check failed: ${String(err)}`);
     return null;
   } finally {
     if (tmpDir) {
@@ -361,8 +361,8 @@ async function runSecurityCheck(
 }
 
 const capsuleClawGuardPlugin = {
-  id: "capsule-claw-guard",
-  name: "Capsule Claw Guard",
+  id: "clawguard",
+  name: "ClawGuard",
   description:
     "Security guard plugin - logs tool calls and uses LLM as a Judge to detect security risks before execution",
 
@@ -409,7 +409,7 @@ const capsuleClawGuardPlugin = {
     // Default: enabled
     const enabled = config.enabled !== false;
     if (!enabled) {
-      api.logger.info("[capsule-claw-guard] Plugin disabled via config");
+      api.logger.info("[clawguard] Plugin disabled via config");
       return;
     }
 
@@ -442,7 +442,7 @@ const capsuleClawGuardPlugin = {
 
       // Log if enabled
       if (logToolCalls) {
-        api.logger.info(`[capsule-claw-guard] Tool call:\n${toolCallJson}`);
+        api.logger.info(`[clawguard] Tool call:\n${toolCallJson}`);
       }
 
       // Run security check if enabled
@@ -455,12 +455,12 @@ const capsuleClawGuardPlugin = {
         if (securityResult) {
           if (securityResult.isRisk) {
             api.logger.warn(
-              `[capsule-claw-guard] Security risk detected: ${securityResult.riskLevel} - ${securityResult.riskType}`,
+              `[clawguard] Security risk detected: ${securityResult.riskLevel} - ${securityResult.riskType}`,
             );
-            api.logger.warn(`[capsule-claw-guard] Reason: ${securityResult.reason}`);
+            api.logger.warn(`[clawguard] Reason: ${securityResult.reason}`);
 
             if (blockOnRisk && ["high", "critical"].includes(securityResult.riskLevel)) {
-              api.logger.warn(`[capsule-claw-guard] Blocking tool call: ${toolName}`);
+              api.logger.warn(`[clawguard] Blocking tool call: ${toolName}`);
               return {
                 block: true,
                 blockReason: `Security risk detected (${securityResult.riskLevel}): ${securityResult.reason}`,
@@ -468,7 +468,7 @@ const capsuleClawGuardPlugin = {
             }
           } else {
             api.logger.info(
-              `[capsule-claw-guard] Security check passed: ${securityResult.reason}`,
+              `[clawguard] Security check passed: ${securityResult.reason}`,
             );
           }
         }
@@ -479,7 +479,7 @@ const capsuleClawGuardPlugin = {
     });
 
     api.logger.info(
-      `[capsule-claw-guard] Initialized (logging: ${logToolCalls}, security: ${securityCheckEnabled}, block: ${blockOnRisk}, maxContextWords: ${maxContextWords})`,
+      `[clawguard] Initialized (logging: ${logToolCalls}, security: ${securityCheckEnabled}, block: ${blockOnRisk}, maxContextWords: ${maxContextWords})`,
     );
   },
 };

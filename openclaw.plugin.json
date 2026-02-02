@@ -1,0 +1,91 @@
+{
+  "id": "capsule-claw-guard",
+  "name": "Capsule Claw Guard",
+  "description": "Security guard plugin - logs tool calls and uses LLM to detect security risks before execution",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "description": "Enable or disable the security guard (default: true)"
+      },
+      "logToolCalls": {
+        "type": "boolean",
+        "description": "Log full tool call JSON to logger.info (default: true)"
+      },
+      "securityCheckEnabled": {
+        "type": "boolean",
+        "description": "Enable LLM-based security risk detection (default: true)"
+      },
+      "securityPrompt": {
+        "type": "string",
+        "description": "Custom prompt for security risk detection (optional)"
+      },
+      "blockOnRisk": {
+        "type": "boolean",
+        "description": "Block tool calls when security risk is detected (default: true)"
+      },
+      "provider": {
+        "type": "string",
+        "description": "Override provider for security check LLM (optional)"
+      },
+      "model": {
+        "type": "string",
+        "description": "Override model for security check LLM (optional)"
+      },
+      "authProfileId": {
+        "type": "string",
+        "description": "Auth profile ID for security check LLM (optional)"
+      },
+      "timeoutMs": {
+        "type": "number",
+        "description": "Timeout for security check LLM call in milliseconds (default: 15000)"
+      }
+    }
+  },
+  "uiHints": {
+    "enabled": {
+      "label": "Enable Guard",
+      "help": "Enable or disable the security guard plugin"
+    },
+    "logToolCalls": {
+      "label": "Log Tool Calls",
+      "help": "When enabled, logs full JSON of every tool call before execution"
+    },
+    "securityCheckEnabled": {
+      "label": "Security Check",
+      "help": "When enabled, uses LLM to analyze tool calls for security risks"
+    },
+    "securityPrompt": {
+      "label": "Security Prompt",
+      "help": "Custom prompt for the LLM security risk detection. Leave empty for default.",
+      "advanced": true
+    },
+    "blockOnRisk": {
+      "label": "Block on Risk",
+      "help": "When enabled, blocks tool calls that are flagged as security risks"
+    },
+    "provider": {
+      "label": "LLM Provider",
+      "help": "Override provider for security check (e.g., anthropic, openai)",
+      "advanced": true
+    },
+    "model": {
+      "label": "LLM Model",
+      "help": "Override model for security check",
+      "advanced": true
+    },
+    "authProfileId": {
+      "label": "Auth Profile",
+      "help": "Auth profile ID for the security check LLM",
+      "advanced": true,
+      "sensitive": true
+    },
+    "timeoutMs": {
+      "label": "Timeout (ms)",
+      "help": "Timeout for security check LLM call in milliseconds",
+      "advanced": true
+    }
+  }
+}

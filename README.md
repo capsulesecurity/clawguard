@@ -14,15 +14,7 @@ A security guard plugin for OpenClaw that monitors and validates tool calls befo
 ## Installation
 
 ```bash
-npm install @capsulesecurity/clawguard
-```
-
-Add the plugin to your OpenClaw configuration:
-
-```json
-{
-  "plugins": ["@capsulesecurity/clawguard"]
-}
+openclaw plugins install @capsulesecurity/clawguard
 ```
 
 ## Configuration

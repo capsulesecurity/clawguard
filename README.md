@@ -26,11 +26,10 @@ openclaw plugins install @capsulesecurity/clawguard
 | `securityCheckEnabled` | boolean | `true` | Enable LLM as a Judge for security evaluation |
 | `securityPrompt` | string | (built-in) | Custom prompt for the judge LLM |
 | `blockOnRisk` | boolean | `true` | Block tool calls judged as high/critical risk |
-| `provider` | string | (auto) | Override provider for the judge LLM |
-| `model` | string | (auto) | Override model for the judge LLM |
-| `authProfileId` | string | (auto) | Auth profile for the judge LLM |
 | `timeoutMs` | number | `15000` | Timeout for judge evaluation in milliseconds |
 | `maxContextWords` | number | `2000` | Maximum words of session context to include |
+| `gatewayHost` | string | `127.0.0.1` | Gateway host for LLM calls |
+| `gatewayPort` | number | `18789` | Gateway port for LLM calls |
 
 ### Example Configuration
 
@@ -76,6 +75,15 @@ You can provide a custom prompt for the judge LLM using the `securityPrompt` con
   }
 }
 ```
+
+## Requirements
+
+The plugin makes HTTP calls to the OpenClaw Gateway's `/v1/chat/completions` endpoint for LLM evaluation. This requires:
+
+1. **Gateway running**: The OpenClaw gateway must be running and accessible
+2. **Authentication** (optional): If your gateway requires authentication, set one of:
+   - `OPENCLAW_GATEWAY_TOKEN` environment variable
+   - `OPENCLAW_GATEWAY_PASSWORD` environment variable
 
 ## How It Works
 

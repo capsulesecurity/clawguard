@@ -1,7 +1,7 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
+import os from "node:os";
 
 // =============================================================================
 // Types
@@ -13,11 +13,10 @@ type ClawGuardConfig = {
   securityCheckEnabled?: boolean;
   securityPrompt?: string;
   blockOnRisk?: boolean;
-  provider?: string;
-  model?: string;
-  authProfileId?: string;
   timeoutMs?: number;
   maxContextWords?: number;
+  gatewayHost?: string;
+  gatewayPort?: number;
 };
 
 type SecurityCheckResult = {
@@ -35,7 +34,16 @@ type ToolCallData = {
   timestamp: string;
 };
 
-type RunEmbeddedPiAgentFn = (params: Record<string, unknown>) => Promise<unknown>;
+type ChatCompletionResponse = {
+  choices?: Array<{
+    message?: {
+      content?: string;
+    };
+  }>;
+  error?: {
+    message?: string;
+  };
+};
 
 type Logger = {
   info: (msg: string) => void;
@@ -105,26 +113,70 @@ function createLogger(baseLogger: Logger) {
 }
 
 // =============================================================================
-// Embedded Agent Loader
+// Gateway HTTP Client
 // =============================================================================
 
-async function loadRunEmbeddedPiAgent(): Promise<RunEmbeddedPiAgentFn> {
-  // Source checkout (tests/dev)
-  try {
-    const mod = await import("../../src/agents/pi-embedded-runner.js");
-    if (typeof (mod as Record<string, unknown>).runEmbeddedPiAgent === "function") {
-      return (mod as Record<string, unknown>).runEmbeddedPiAgent as RunEmbeddedPiAgentFn;
-    }
-  } catch {
-    // Not in source checkout, try bundled path
-  }
+const DEFAULT_GATEWAY_HOST = "127.0.0.1";
+const DEFAULT_GATEWAY_PORT = 18789;
 
-  // Bundled install (built)
-  const mod = await import("../../agents/pi-embedded-runner.js");
-  if (typeof mod.runEmbeddedPiAgent !== "function") {
-    throw new Error("runEmbeddedPiAgent not available");
+function resolveGatewayUrl(config: ClawGuardConfig, apiConfig: Record<string, unknown> | undefined): string {
+  const host = config.gatewayHost?.trim() || DEFAULT_GATEWAY_HOST;
+  const port = config.gatewayPort ?? (apiConfig?.gateway as Record<string, unknown>)?.port ?? DEFAULT_GATEWAY_PORT;
+  return `http://${host}:${port}`;
+}
+
+function resolveGatewayAuthToken(): string | null {
+  return process.env.OPENCLAW_GATEWAY_TOKEN ?? process.env.OPENCLAW_GATEWAY_PASSWORD ?? null;
+}
+
+async function callGatewayChat(
+  gatewayUrl: string,
+  authToken: string | null,
+  prompt: string,
+  timeoutMs: number,
+): Promise<string> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (authToken) {
+      headers["Authorization"] = `Bearer ${authToken}`;
+    }
+
+    const response = await fetch(`${gatewayUrl}/v1/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: "openclaw:main",
+        messages: [{ role: "user", content: prompt }],
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      throw new Error(`Gateway API error (${response.status}): ${errorText}`);
+    }
+
+    const data = (await response.json()) as ChatCompletionResponse;
+
+    if (data.error) {
+      throw new Error(`Gateway API error: ${data.error.message}`);
+    }
+
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) {
+      throw new Error("Gateway API returned empty response");
+    }
+
+    return content;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return mod.runEmbeddedPiAgent;
 }
 
 // =============================================================================
@@ -135,16 +187,6 @@ function stripCodeFences(text: string): string {
   const trimmed = text.trim();
   const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   return match ? (match[1] ?? "").trim() : trimmed;
-}
-
-function collectPayloadText(
-  payloads: Array<{ text?: string; isError?: boolean }> | undefined,
-): string {
-  return (payloads ?? [])
-    .filter((p) => !p.isError && typeof p.text === "string")
-    .map((p) => p.text ?? "")
-    .join("\n")
-    .trim();
 }
 
 function normalizeWhitespace(text: string): string {
@@ -317,24 +359,6 @@ function parseSessionMessages(content: string): string[] {
 // Security Check (LLM as a Judge)
 // =============================================================================
 
-function resolveModelConfig(
-  config: ClawGuardConfig,
-  apiConfig: Record<string, unknown> | undefined,
-): { provider?: string; model?: string; authProfileId?: string } {
-  const primary = (apiConfig?.agents as Record<string, unknown>)?.defaults as Record<string, unknown>;
-  const modelConfig = primary?.model as Record<string, unknown>;
-  const primaryModel = typeof modelConfig?.primary === "string" ? modelConfig.primary : undefined;
-
-  const [defaultProvider, ...modelParts] = primaryModel?.split("/") ?? [];
-  const defaultModel = modelParts.join("/");
-
-  return {
-    provider: config.provider?.trim() || defaultProvider || undefined,
-    model: config.model?.trim() || defaultModel || undefined,
-    authProfileId: config.authProfileId?.trim() || undefined,
-  };
-}
-
 function buildSecurityPrompt(
   template: string,
   toolCallJson: string,
@@ -374,46 +398,17 @@ async function runSecurityCheck(
   sessionContext: string,
   log: ReturnType<typeof createLogger>,
 ): Promise<SecurityCheckResult | null> {
-  const { provider, model, authProfileId } = resolveModelConfig(
-    config,
-    api.config as Record<string, unknown>,
-  );
-
-  if (!provider || !model) {
-    log.warn("Cannot run security check: no provider/model configured");
-    return null;
-  }
-
   const timeoutMs = config.timeoutMs && config.timeoutMs > 0 ? config.timeoutMs : DEFAULT_TIMEOUT_MS;
   const promptTemplate = config.securityPrompt?.trim() || DEFAULT_SECURITY_PROMPT;
   const fullPrompt = buildSecurityPrompt(promptTemplate, toolCallJson, sessionContext);
 
-  let tmpDir: string | null = null;
+  const gatewayUrl = resolveGatewayUrl(config, api.config as Record<string, unknown>);
+  const authToken = resolveGatewayAuthToken();
 
   try {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "clawguard-"));
-    const sessionId = `clawguard-${Date.now()}`;
-    const sessionFile = path.join(tmpDir, "session.json");
+    log.debug(`Running security check via gateway at ${gatewayUrl}`);
 
-    log.debug(`Running security check with ${provider}/${model}`);
-
-    const runEmbeddedPiAgent = await loadRunEmbeddedPiAgent();
-    const result = await runEmbeddedPiAgent({
-      sessionId,
-      sessionFile,
-      workspaceDir: (api.config as Record<string, unknown>)?.agents?.defaults?.workspace ?? process.cwd(),
-      config: api.config,
-      prompt: fullPrompt,
-      timeoutMs,
-      runId: `clawguard-${Date.now()}`,
-      provider,
-      model,
-      authProfileId,
-      authProfileIdSource: authProfileId ? "user" : "auto",
-      disableTools: true,
-    });
-
-    const text = collectPayloadText((result as Record<string, unknown>).payloads as Array<{ text?: string; isError?: boolean }>);
+    const text = await callGatewayChat(gatewayUrl, authToken, fullPrompt, timeoutMs);
 
     if (!text) {
       log.warn("Security check LLM returned empty output");
@@ -431,10 +426,6 @@ async function runSecurityCheck(
   } catch (err) {
     log.error(`Security check failed: ${String(err)}`);
     return null;
-  } finally {
-    if (tmpDir) {
-      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-    }
   }
 }
 
@@ -561,10 +552,18 @@ const clawGuardPlugin = {
           type: "number",
           description: "Maximum words of session context to include (default: 2000)",
         },
-        provider: { type: "string" },
-        model: { type: "string" },
-        authProfileId: { type: "string" },
-        timeoutMs: { type: "number" },
+        timeoutMs: {
+          type: "number",
+          description: "Timeout for security check in milliseconds (default: 15000)",
+        },
+        gatewayHost: {
+          type: "string",
+          description: "Gateway host for LLM calls (default: 127.0.0.1)",
+        },
+        gatewayPort: {
+          type: "number",
+          description: "Gateway port for LLM calls (default: 18789)",
+        },
       },
     },
   },

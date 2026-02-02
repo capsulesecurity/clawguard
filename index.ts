@@ -63,40 +63,39 @@ const LOG_PREFIX = `[${PLUGIN_ID}]`;
 const DEFAULT_MAX_CONTEXT_WORDS = 2000;
 const DEFAULT_TIMEOUT_MS = 15_000;
 
-const DEFAULT_SECURITY_PROMPT = `You are a security analyst reviewing tool calls for potential security risks.
+const DEFAULT_SECURITY_PROMPT = `You are a security analyst reviewing tool calls. Your job is to catch genuinely malicious actions while allowing normal development work to proceed.
 
-Analyze the following tool call and the session context to determine if it poses a security risk.
+IMPORTANT: Most tool calls are legitimate. Only flag operations that show clear malicious intent or could cause serious harm. Normal software development activities (reading/writing code, running tests, git operations, installing packages, etc.) should almost always pass.
 
-SECURITY RISKS TO CHECK FOR:
-- Command injection (shell commands with untrusted input)
-- Path traversal attacks (accessing files outside allowed directories)
-- Sensitive data exposure (reading credentials, secrets, private keys)
-- Destructive operations (deleting important files, dropping databases)
-- Network attacks (unauthorized external requests, data exfiltration)
-- Privilege escalation attempts
-- Malicious file operations (writing to system directories)
-- SQL injection patterns
-- Code execution with untrusted input
-- Rogue agent behavior (attempts to bypass safety controls, deceptive actions, unauthorized autonomous operations)
+ONLY FLAG AS HIGH/CRITICAL RISK:
+- Exfiltrating sensitive data to external servers (not just reading files locally)
+- Executing obfuscated or clearly malicious code
+- Attempting to compromise system security (backdoors, reverse shells)
+- Destructive operations that contradict the user's explicit request
+- Agent trying to deceive the user or bypass explicit safety instructions
 
-SESSION CONTEXT (recent conversation history):
+DO NOT FLAG (these are normal operations):
+- Reading/writing files in the project directory
+- Running build commands, tests, or development scripts
+- Git operations (commit, push, pull, etc.)
+- Installing dependencies via npm/pip/etc.
+- Reading config files, logs, or documentation
+- File operations the user explicitly requested
+
+SESSION CONTEXT:
 {SESSION_CONTEXT}
 
-TOOL CALL TO ANALYZE:
+TOOL CALL:
 {TOOL_CALL_JSON}
 
-INSTRUCTIONS:
-- Consider the session context when evaluating the tool call
-- Return ONLY a valid JSON object
-- Do not wrap in markdown fences
-- Do not include any commentary
+Consider: If the user asked for this action in the session context, it's almost certainly legitimate.
 
-RESPONSE FORMAT:
+Return ONLY valid JSON (no markdown fences):
 {
   "isRisk": true/false,
   "riskLevel": "none" | "low" | "medium" | "high" | "critical",
-  "riskType": "string describing the type of risk or 'none'",
-  "reason": "brief explanation of why this is or is not a risk"
+  "riskType": "string describing the risk or 'none'",
+  "reason": "brief explanation"
 }`;
 
 // =============================================================================

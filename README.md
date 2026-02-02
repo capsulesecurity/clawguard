@@ -81,7 +81,11 @@ You can provide a custom prompt for the judge LLM using the `securityPrompt` con
 The plugin makes HTTP calls to the OpenClaw Gateway's `/v1/chat/completions` endpoint for LLM evaluation. This requires:
 
 1. **Gateway running**: The OpenClaw gateway must be running and accessible
-2. **Authentication** (optional): If your gateway requires authentication, set one of:
+2. **Enable chat completions endpoint**: Set `gateway.http.endpoints.chatCompletions.enabled` to `true` in your config:
+   ```bash
+   openclaw config set gateway.http.endpoints.chatCompletions.enabled true
+   ```
+3. **Authentication** (optional): If your gateway requires authentication, set one of:
    - `OPENCLAW_GATEWAY_TOKEN` environment variable
    - `OPENCLAW_GATEWAY_PASSWORD` environment variable
 

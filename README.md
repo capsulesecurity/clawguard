@@ -1,5 +1,7 @@
 # ClawGuard by Capsule
 
+![ClawGuard](clawguard.png)
+
 A security guard plugin for OpenClaw that monitors and validates tool calls before execution using an **LLM as a Judge** approach for risk detection.
 
 ## Features

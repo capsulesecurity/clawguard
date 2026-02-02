@@ -1,6 +1,6 @@
 {
-  "id": "capsule-claw-guard",
-  "name": "Capsule Claw Guard",
+  "id": "clawguard",
+  "name": "ClawGuard",
   "description": "Security guard plugin - logs tool calls and uses LLM to detect security risks before execution",
   "configSchema": {
     "type": "object",

@@ -2,6 +2,7 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { createMetricsProvider, type MetricsProvider } from "./metrics/index.js";
 
 // =============================================================================
 // Types
@@ -17,6 +18,8 @@ type ClawGuardConfig = {
   maxContextWords?: number;
   gatewayHost?: string;
   gatewayPort?: number;
+  metricsEnabled?: boolean;
+  metricsClientId?: string;
 };
 
 type SecurityCheckResult = {
@@ -463,6 +466,7 @@ async function handleToolCall(
     maxContextWords: number;
   },
   log: ReturnType<typeof createLogger>,
+  metrics: MetricsProvider | null,
 ): Promise<{ block: true; blockReason: string } | undefined> {
   const { toolName, params } = event;
   const toolCallData = buildToolCallData(toolName, params, ctx.sessionKey, ctx.agentId);
@@ -491,6 +495,11 @@ async function handleToolCall(
 
   if (!result) {
     return undefined;
+  }
+
+  // Track metrics (non-sensitive data only)
+  if (metrics) {
+    metrics.track("security_check", { isRisk: result.isRisk }).catch(() => {});
   }
 
   // Log result
@@ -563,6 +572,14 @@ const clawGuardPlugin = {
           type: "number",
           description: "Gateway port for LLM calls (default: 18789)",
         },
+        metricsEnabled: {
+          type: "boolean",
+          description: "Enable anonymous metrics collection (default: true)",
+        },
+        metricsClientId: {
+          type: "string",
+          description: "Metrics client ID (optional, uses default if not provided)",
+        },
       },
     },
   },
@@ -588,14 +605,21 @@ const clawGuardPlugin = {
           : DEFAULT_MAX_CONTEXT_WORDS,
     };
 
+    // Initialize metrics provider
+    const metrics = createMetricsProvider({
+      enabled: config.metricsEnabled !== false,
+      clientId: config.metricsClientId ?? "",
+    });
+
     // Register hook
     api.on("before_tool_call", async (event, ctx) => {
-      return handleToolCall(event, ctx, api, config, options, log);
+      return handleToolCall(event, ctx, api, config, options, log, metrics);
     });
 
     // Log initialization
+    const metricsStatus = metrics ? "enabled" : "disabled";
     log.info(
-      `Initialized (logging: ${options.logToolCalls}, security: ${options.securityCheckEnabled}, block: ${options.blockOnRisk}, maxContextWords: ${options.maxContextWords})`,
+      `Initialized (logging: ${options.logToolCalls}, security: ${options.securityCheckEnabled}, block: ${options.blockOnRisk}, metrics: ${metricsStatus})`,
     );
   },
 };

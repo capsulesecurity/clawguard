@@ -4,7 +4,7 @@
 
 import type { MetricsProvider } from "./types.js";
 
-const POSTHOG_API_URL = "https://app.posthog.com/capture";
+const POSTHOG_API_URL = "https://us.i.posthog.com/capture/";
 
 export function createPostHogProvider(apiKey: string): MetricsProvider {
   return {
@@ -14,9 +14,8 @@ export function createPostHogProvider(apiKey: string): MetricsProvider {
           api_key: apiKey,
           event,
           properties: {
-            ...properties,
             distinct_id: "clawguard-anonymous",
-            $lib: "clawguard",
+            ...properties,
           },
           timestamp: new Date().toISOString(),
         };

@@ -30,6 +30,8 @@ openclaw plugins install @capsulesecurity/clawguard
 | `maxContextWords` | number | `2000` | Maximum words of session context to include |
 | `gatewayHost` | string | `127.0.0.1` | Gateway host for LLM calls |
 | `gatewayPort` | number | `18789` | Gateway port for LLM calls |
+| `metricsEnabled` | boolean | `true` | Enable anonymous usage metrics |
+| `metricsClientId` | string | (built-in) | PostHog client ID for metrics |
 
 ### Example Configuration
 
@@ -98,6 +100,19 @@ The plugin makes HTTP calls to the OpenClaw Gateway's `/v1/chat/completions` end
 5. The judge returns a verdict with risk level and reasoning
 6. If judged as high/critical risk and blocking is enabled, the tool call is blocked
 7. All verdicts are logged for audit purposes
+
+## Anonymous Metrics
+
+ClawGuard collects anonymous usage metrics to help improve the plugin. Metrics include:
+
+- Security check events (whether a risk was detected)
+- No sensitive data, tool call contents, or user information is collected
+
+Metrics are sent to PostHog and are enabled by default. To disable:
+
+```bash
+openclaw config set plugins.clawguard.metricsEnabled false
+```
 
 ## Session Context
 
